@@ -11,6 +11,8 @@ use ark_std::rc::Rc;
 use ark_std::vec::Vec;
 use ark_std::{test_rng, UniformRand};
 use ark_test_curves::bls12_381::Fr;
+use binary_fields::ark::configs::gf128::Gf128;
+use binary_fields::hekate::{Block128Ark, Block128FlatArk};
 
 fn random_product<F: Field, R: RngCore>(
     nv: usize,
@@ -265,5 +267,216 @@ fn test_shared_reference() {
     assert!(
         poly.evaluate(&subclaim.point) == subclaim.expected_evaluation,
         "wrong subclaim"
+    );
+}
+
+// ── Binary field helpers (mirror test_polynomial / test_protocol above) ──────
+// num_multiplicands_range must stay (1, 2): keeps round polynomial degree-1,
+// which is required for char-2 fields (interpolation at {0,1} only).
+
+fn test_polynomial_gf128(nv: usize, num_multiplicands_range: (usize, usize), num_products: usize) {
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<Gf128, _>(nv, num_multiplicands_range, num_products, &mut rng);
+    let poly_info = poly.info();
+    let proof = MLSumcheck::prove(&poly).expect("fail to prove");
+    let subclaim = MLSumcheck::verify(&poly_info, asserted_sum, &proof).expect("fail to verify");
+    assert!(
+        poly.evaluate(&subclaim.point) == subclaim.expected_evaluation,
+        "wrong subclaim"
+    );
+}
+
+fn test_protocol_gf128(nv: usize, num_multiplicands_range: (usize, usize), num_products: usize) {
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<Gf128, _>(nv, num_multiplicands_range, num_products, &mut rng);
+    let poly_info = poly.info();
+    let mut prover_state = IPForMLSumcheck::prover_init(&poly);
+    let mut verifier_state = IPForMLSumcheck::verifier_init(&poly_info);
+    let mut verifier_msg = None;
+    for _ in 0..poly.num_variables {
+        let prover_message = IPForMLSumcheck::prove_round(&mut prover_state, &verifier_msg);
+        let verifier_msg2 =
+            IPForMLSumcheck::verify_round(prover_message, &mut verifier_state, &mut rng);
+        verifier_msg = verifier_msg2;
+    }
+    let subclaim = IPForMLSumcheck::check_and_generate_subclaim(verifier_state, asserted_sum)
+        .expect("fail to generate subclaim");
+    assert!(
+        poly.evaluate(&subclaim.point) == subclaim.expected_evaluation,
+        "wrong subclaim"
+    );
+}
+
+// ── Binary field tests ────────────────────────────────────────────────────────
+
+#[test]
+fn test_trivial_polynomial_gf128() {
+    for _ in 0..10 {
+        test_polynomial_gf128(1, (1, 2), 5);
+        test_protocol_gf128(1, (1, 2), 5);
+    }
+}
+
+#[test]
+fn test_normal_polynomial_gf128() {
+    for _ in 0..10 {
+        test_polynomial_gf128(12, (1, 2), 5);
+        test_protocol_gf128(12, (1, 2), 5);
+    }
+}
+
+#[test]
+fn test_normal_polynomial_gf128_wrong_sum_rejected() {
+    use ark_ff::One;
+    let mut rng = test_rng();
+    let (poly, asserted_sum) = random_list_of_products::<Gf128, _>(12, (1, 2), 5, &mut rng);
+    let poly_info = poly.info();
+    let proof = MLSumcheck::prove(&poly).expect("fail to prove");
+    let wrong_sum = asserted_sum + Gf128::one();
+    assert!(
+        MLSumcheck::verify(&poly_info, wrong_sum, &proof).is_err(),
+        "verifier should reject a wrong claimed sum"
+    );
+}
+
+// ── Hekate Block128Ark helpers ────────────────────────────────────────────────
+// num_multiplicands_range must stay (1, 2): keeps round polynomial degree-1,
+// required for char-2 fields (evaluation domain is {0,1} only).
+
+fn test_polynomial_block128(nv: usize, num_multiplicands_range: (usize, usize), num_products: usize) {
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<Block128Ark, _>(nv, num_multiplicands_range, num_products, &mut rng);
+    let poly_info = poly.info();
+    let proof = MLSumcheck::prove(&poly).expect("fail to prove");
+    let subclaim = MLSumcheck::verify(&poly_info, asserted_sum, &proof).expect("fail to verify");
+    assert!(
+        poly.evaluate(&subclaim.point) == subclaim.expected_evaluation,
+        "wrong subclaim"
+    );
+}
+
+fn test_protocol_block128(nv: usize, num_multiplicands_range: (usize, usize), num_products: usize) {
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<Block128Ark, _>(nv, num_multiplicands_range, num_products, &mut rng);
+    let poly_info = poly.info();
+    let mut prover_state = IPForMLSumcheck::prover_init(&poly);
+    let mut verifier_state = IPForMLSumcheck::verifier_init(&poly_info);
+    let mut verifier_msg = None;
+    for _ in 0..poly.num_variables {
+        let prover_message = IPForMLSumcheck::prove_round(&mut prover_state, &verifier_msg);
+        let verifier_msg2 =
+            IPForMLSumcheck::verify_round(prover_message, &mut verifier_state, &mut rng);
+        verifier_msg = verifier_msg2;
+    }
+    let subclaim = IPForMLSumcheck::check_and_generate_subclaim(verifier_state, asserted_sum)
+        .expect("fail to generate subclaim");
+    assert!(
+        poly.evaluate(&subclaim.point) == subclaim.expected_evaluation,
+        "wrong subclaim"
+    );
+}
+
+// ── Hekate Block128Ark tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_trivial_polynomial_block128() {
+    for _ in 0..10 {
+        test_polynomial_block128(1, (1, 2), 5);
+        test_protocol_block128(1, (1, 2), 5);
+    }
+}
+
+#[test]
+fn test_normal_polynomial_block128() {
+    for _ in 0..10 {
+        test_polynomial_block128(12, (1, 2), 5);
+        test_protocol_block128(12, (1, 2), 5);
+    }
+}
+
+#[test]
+fn test_normal_polynomial_block128_wrong_sum_rejected() {
+    use ark_ff::One;
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<Block128Ark, _>(12, (1, 2), 5, &mut rng);
+    let poly_info = poly.info();
+    let proof = MLSumcheck::prove(&poly).expect("fail to prove");
+    let wrong_sum = asserted_sum + Block128Ark::one();
+    assert!(
+        MLSumcheck::verify(&poly_info, wrong_sum, &proof).is_err(),
+        "verifier should reject a wrong claimed sum"
+    );
+}
+
+// ── Hekate Block128FlatArk helpers ───────────────────────────────────────────
+
+fn test_polynomial_block128flat(nv: usize, num_multiplicands_range: (usize, usize), num_products: usize) {
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<Block128FlatArk, _>(nv, num_multiplicands_range, num_products, &mut rng);
+    let poly_info = poly.info();
+    let proof = MLSumcheck::prove(&poly).expect("fail to prove");
+    let subclaim = MLSumcheck::verify(&poly_info, asserted_sum, &proof).expect("fail to verify");
+    assert!(
+        poly.evaluate(&subclaim.point) == subclaim.expected_evaluation,
+        "wrong subclaim"
+    );
+}
+
+fn test_protocol_block128flat(nv: usize, num_multiplicands_range: (usize, usize), num_products: usize) {
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<Block128FlatArk, _>(nv, num_multiplicands_range, num_products, &mut rng);
+    let poly_info = poly.info();
+    let mut prover_state = IPForMLSumcheck::prover_init(&poly);
+    let mut verifier_state = IPForMLSumcheck::verifier_init(&poly_info);
+    let mut verifier_msg = None;
+    for _ in 0..poly.num_variables {
+        let prover_message = IPForMLSumcheck::prove_round(&mut prover_state, &verifier_msg);
+        let verifier_msg2 =
+            IPForMLSumcheck::verify_round(prover_message, &mut verifier_state, &mut rng);
+        verifier_msg = verifier_msg2;
+    }
+    let subclaim = IPForMLSumcheck::check_and_generate_subclaim(verifier_state, asserted_sum)
+        .expect("fail to generate subclaim");
+    assert!(
+        poly.evaluate(&subclaim.point) == subclaim.expected_evaluation,
+        "wrong subclaim"
+    );
+}
+
+#[test]
+fn test_trivial_polynomial_block128flat() {
+    for _ in 0..10 {
+        test_polynomial_block128flat(1, (1, 2), 5);
+        test_protocol_block128flat(1, (1, 2), 5);
+    }
+}
+
+#[test]
+fn test_normal_polynomial_block128flat() {
+    for _ in 0..10 {
+        test_polynomial_block128flat(12, (1, 2), 5);
+        test_protocol_block128flat(12, (1, 2), 5);
+    }
+}
+
+#[test]
+fn test_normal_polynomial_block128flat_wrong_sum_rejected() {
+    use ark_ff::One;
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<Block128FlatArk, _>(12, (1, 2), 5, &mut rng);
+    let poly_info = poly.info();
+    let proof = MLSumcheck::prove(&poly).expect("fail to prove");
+    let wrong_sum = asserted_sum + Block128FlatArk::one();
+    assert!(
+        MLSumcheck::verify(&poly_info, wrong_sum, &proof).is_err(),
+        "verifier should reject a wrong claimed sum"
     );
 }
