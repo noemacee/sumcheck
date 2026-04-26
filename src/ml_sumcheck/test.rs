@@ -11,6 +11,7 @@ use ark_std::rc::Rc;
 use ark_std::vec::Vec;
 use ark_std::{test_rng, UniformRand};
 use ark_test_curves::bls12_381::Fr;
+use binary_fields::ark::configs::babybear::BabyBearExt4;
 use binary_fields::ark::configs::gf128::Gf128;
 use binary_fields::ark::configs::goldilocks::GoldilocksExt2;
 use binary_fields::hekate::{Block128Ark, Block128FlatArk};
@@ -617,6 +618,76 @@ fn test_normal_polynomial_goldilocks_ext2_wrong_sum_rejected() {
     let poly_info = poly.info();
     let proof = MLSumcheck::prove(&poly).expect("fail to prove");
     let wrong_sum = asserted_sum + GoldilocksExt2::one();
+    assert!(
+        MLSumcheck::verify(&poly_info, wrong_sum, &proof).is_err(),
+        "verifier should reject a wrong claimed sum"
+    );
+}
+
+// ── BabyBearExt4 helpers ──────────────────────────────────────────────────────
+
+fn test_polynomial_babybear_ext4(nv: usize, num_multiplicands_range: (usize, usize), num_products: usize) {
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<BabyBearExt4, _>(nv, num_multiplicands_range, num_products, &mut rng);
+    let poly_info = poly.info();
+    let proof = MLSumcheck::prove(&poly).expect("fail to prove");
+    let subclaim = MLSumcheck::verify(&poly_info, asserted_sum, &proof).expect("fail to verify");
+    assert!(
+        poly.evaluate(&subclaim.point) == subclaim.expected_evaluation,
+        "wrong subclaim"
+    );
+}
+
+fn test_protocol_babybear_ext4(nv: usize, num_multiplicands_range: (usize, usize), num_products: usize) {
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<BabyBearExt4, _>(nv, num_multiplicands_range, num_products, &mut rng);
+    let poly_info = poly.info();
+    let mut prover_state = IPForMLSumcheck::prover_init(&poly);
+    let mut verifier_state = IPForMLSumcheck::verifier_init(&poly_info);
+    let mut verifier_msg = None;
+    for _ in 0..poly.num_variables {
+        let prover_message = IPForMLSumcheck::prove_round(&mut prover_state, &verifier_msg);
+        let verifier_msg2 =
+            IPForMLSumcheck::verify_round(prover_message, &mut verifier_state, &mut rng);
+        verifier_msg = verifier_msg2;
+    }
+    let subclaim = IPForMLSumcheck::check_and_generate_subclaim(verifier_state, asserted_sum)
+        .expect("fail to generate subclaim");
+    assert!(
+        poly.evaluate(&subclaim.point) == subclaim.expected_evaluation,
+        "wrong subclaim"
+    );
+}
+
+// ── BabyBearExt4 tests ────────────────────────────────────────────────────────
+
+#[test]
+fn test_trivial_polynomial_babybear_ext4() {
+    for _ in 0..10 {
+        test_polynomial_babybear_ext4(1, (1, 4), 5);
+        test_protocol_babybear_ext4(1, (1, 4), 5);
+    }
+}
+
+#[test]
+fn test_normal_polynomial_babybear_ext4() {
+    for _ in 0..10 {
+        test_polynomial_babybear_ext4(12, (1, 4), 5);
+        test_protocol_babybear_ext4(12, (1, 4), 5);
+    }
+}
+
+#[test]
+fn test_normal_polynomial_babybear_ext4_wrong_sum_rejected() {
+    use ark_ff::One;
+    let mut rng = test_rng();
+    let (poly, asserted_sum) =
+        random_list_of_products::<BabyBearExt4, _>(12, (1, 4), 5, &mut rng);
+    let poly_info = poly.info();
+    let proof = MLSumcheck::prove(&poly).expect("fail to prove");
+    let wrong_sum = asserted_sum + BabyBearExt4::one();
     assert!(
         MLSumcheck::verify(&poly_info, wrong_sum, &proof).is_err(),
         "verifier should reject a wrong claimed sum"
