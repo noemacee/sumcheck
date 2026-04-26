@@ -4,6 +4,7 @@ use ark_std::{rc::Rc, test_rng};
 use ark_std::rand::RngCore;
 use ark_sumcheck::ml_sumcheck::{MLSumcheck, data_structures::ListOfProductsOfPolynomials};
 use ark_test_curves::bls12_381::Fr;
+use ark_test_curves::smallfp::SmallFp64Goldilock;
 use binary_fields::ark::configs::gf128::Gf128;
 use binary_fields::hekate::{Block128Ark, Block128FlatArk};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
@@ -78,5 +79,11 @@ fn bench_block128flatark(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_fr, bench_gf128, bench_block128ark, bench_block128flatark);
+fn bench_goldilocks(c: &mut Criterion) {
+    for nv in [8, 12, 16] {
+        bench_prove_verify::<SmallFp64Goldilock>(c, "Goldilocks (SmallFp 64-bit)", nv);
+    }
+}
+
+criterion_group!(benches, bench_fr, bench_goldilocks, bench_gf128, bench_block128ark, bench_block128flatark);
 criterion_main!(benches);
