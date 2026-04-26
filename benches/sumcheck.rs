@@ -6,6 +6,7 @@ use ark_sumcheck::ml_sumcheck::{MLSumcheck, data_structures::ListOfProductsOfPol
 use ark_test_curves::bls12_381::Fr;
 use ark_test_curves::smallfp::SmallFp64Goldilock;
 use binary_fields::ark::configs::gf128::Gf128;
+use binary_fields::ark::configs::goldilocks::GoldilocksExt2;
 use binary_fields::hekate::{Block128Ark, Block128FlatArk};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
@@ -85,5 +86,11 @@ fn bench_goldilocks(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_fr, bench_goldilocks, bench_gf128, bench_block128ark, bench_block128flatark);
+fn bench_goldilocks_ext2(c: &mut Criterion) {
+    for nv in [8, 12, 16] {
+        bench_prove_verify::<GoldilocksExt2>(c, "GoldilocksExt2 (128-bit prime)", nv);
+    }
+}
+
+criterion_group!(benches, bench_fr, bench_goldilocks, bench_goldilocks_ext2, bench_gf128, bench_block128ark, bench_block128flatark);
 criterion_main!(benches);
